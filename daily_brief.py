@@ -1,144 +1,162 @@
+"""
+LGV Daily Brief — daily_brief.py
+Canonical script · github.com/marklainsworth/lgv-ops
+Version: 2.0 — unified build (calendar + scheduling + brief)
+
+SCHEDULE TUPLE FORMAT:
+  (time_str, title, tag, detail, is_task, granola_or_None)
+  is_task=True  → single line (title · tag · due today if applicable)
+  is_task=False → two lines  (bold title + italic detail)
+
+POMODORO BREAK RULE (applied automatically in schedule renderer):
+  After consecutive task blocks: 1st → 5 min break, 2nd → 10 min, 3rd → 15 min
+  Counter resets after any non-task block or after 3rd break.
+  Break rows are inserted automatically — do NOT add them manually to DATA["schedule"].
+
+DATA DICT — populate fresh each run via the unified Claude API prompt.
+"""
+
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
-from reportlab.lib.colors import HexColor
+from reportlab.lib.colors import HexColor, black, white
+from datetime import datetime
+import math, os
 
 W, H = letter
 
-# ── Palette — maximum contrast for e-ink ─────────────────────────────────────
-INK        = HexColor('#000000')   # pure black
-CHARCOAL   = HexColor('#0F0F0E')   # near black
-DARK_GRAY  = HexColor('#1A1A18')   # very dark — used for most body text
-MID_GRAY   = HexColor('#2A2A28')   # dark gray — nothing lighter than this
-LIGHT_GRAY = HexColor('#2A2A28')   # same as MID — no more washout
-PALE       = HexColor('#888888')   # rules — solid and visible
+INK        = HexColor('#000000')
+CHARCOAL   = HexColor('#000000')
+DARK_GRAY  = HexColor('#000000')
+MID_GRAY   = HexColor('#000000')
+LIGHT_GRAY = HexColor('#000000')
+PALE       = HexColor('#000000')
 OFF_WHITE  = HexColor('#FAFAF8')
-GRANOLA_BG = HexColor('#EBEBEA')
 GOLD       = HexColor('#C8B89A')
+GRANOLA_BG = HexColor('#F0EFEB')
 
-ML  = 0.85 * inch
-MR  = 0.6  * inch
-MT  = 0.65 * inch
-MB  = 0.55 * inch
+ML  = 0.425 * inch
+MR  = 0.3   * inch
+MT  = 0.325 * inch
+MB  = 0.275 * inch
 CW  = W - ML - MR
 
-# ── Font size scale — bumped throughout ──────────────────────────────────────
-# Desktop → reMarkable mapping:
-#   6.5pt  → 8pt
-#   7pt    → 9pt
-#   7.2pt  → 9pt
-#   7.5pt  → 9.5pt
-#   7.8pt  → 9.5pt
-#   8pt    → 10pt
-#   8.5pt  → 11pt
-#   9pt    → 11pt
-#   9.5pt  → 12pt
-#   10pt   → 12pt
-#   13pt   → 15pt
-#   27pt   → 28pt (masthead stays close)
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  LIVE DATA
-# ─────────────────────────────────────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# DATA — populated by the unified Claude prompt at runtime
+# ---------------------------------------------------------------------------
 DATA = {
-    "day_name":       "Sunday",
-    "date_str":       "22/03/26",
-    "operator_quote": '"Confine yourself to the present." — Marcus Aurelius, Meditations',
-    "weather_home":   "San Francisco  ·  Partly cloudy → sunny  ·  Low 52°  High 70°F  ·  W winds 5–10 mph",
-    "weather_travel": "Las Vegas  ·  Sunny, record heat wave  ·  Low 65°  High 92°F  ·  Extreme heat advisory",
-    "travel_label":   "Traveling Tomorrow",
+    "day_name":      "Tuesday",
+    "date_str":      "24/03/26",
+    "operator_quote": "Plans are useless. Planning is indispensable. — Dwight D. Eisenhower",
+    "weather_home":  "San Francisco  \u00b7  Partly cloudy  \u00b7  High 68\u00b0F",
+    "weather_travel": "Las Vegas  \u00b7  Clear  \u00b7  High 96\u00b0F",
+    "travel_label":  None,
     "week_events": [
-        ("MON", "Issue 03 Draft [TGVR]  9:00am"),
-        ("",    "DCC / Burner Distro  12:00pm"),
-        ("",    "✈ SFO→LAS SW#1800  1:35pm"),
-        ("TUE", "Las Vegas — Resorts World"),
-        ("WED", "Las Vegas — Resorts World"),
-        ("THU", "✈ LAS→SFO SW#1718  1:50pm"),
-        ("FRI", "Monarch reconciliation  2:00pm"),
+        ("TUE", "TGVR Draft 9\u201310am  \u00b7  CFK Booth 10am\u20134:30pm"),
+        ("WED", "TGVR Draft Block 3 9am  \u00b7  CFK Booth 10am\u20135pm"),
+        ("THU", "CFK Booth 10am\u20134pm  \u00b7  LAS\u2192SFO 1:50pm  \u00b7  Peet\u2019s / Mostafa 4pm"),
+        ("FRI", "Task blocks 9:30am\u201312pm  \u00b7  Monarch 2pm"),
+        ("SAT", "Flag Football 10am  \u00b7  Family Check-In 10:30am"),
     ],
+    # schedule: (time, title, tag, detail, is_task, granola)
+    # Breaks are auto-inserted — do NOT add them here
     "schedule": [
-        ("10:00", "Flag Football — John",         "",        "College of San Mateo · CSM Field",     True,  None),
-        ("10:30", "Ainsworth Family Check In",    "",        "Weekly · Bonnie + Mark",               True,  None),
-        ("12:00", "Dupixent Shot",               "[MLA]",   "OVERDUE since Dec 10 — do today",      False, None),
-        ("12:30", "Clean Your Room",             "[Family]","30 min — overdue from Mar 22",          False, None),
-        ("17:00", "Apollo | TuttoFood Outreach", "[MLA]",   "Turn on — Motion task",                False, None),
+        ("9:00",  "Issue No. 03 draft",          "[TGVR]", "Block 1 of 3 \u2014 30/30/30",  True,  None),
+        ("9:30",  "Issue No. 03 draft",          "[TGVR]", "Block 2 of 3",                   True,  None),
+        ("10:00", "CFK Booth \u2014 Pizza Expo", "",       "LVCC Booth #3206 \u00b7 10am\u20134:30pm", False, None),
+        ("12:00", "Lunch \u2014 Not Available",  "",       "Blocked",                          False, None),
     ],
+    # birthdays only — used in FAMILY & HOME right column
     "family_home": [
-        ("Today",  "Flag Football  ·  John  ·  CSM, 10:00am"),
-        ("Today",  "Family Check In  ·  10:30am"),
-        ("O/DUE",  "Dupixent Shot — overdue since Dec 10"),
-        ("Today",  "Clean your room — overdue"),
-    ],
-    "birthdays": [
-        ("Mon Mar 23", "Aaron Milano"),
-        ("Mon Mar 23", "Carl Daniels  (42nd)"),
+        ("Sun 29",  "Cynthia Shannon \u2014 Birthday"),
+        ("Mon 30",  "Mark Russ \u2014 Birthday"),
     ],
     "urgent": [
-        "Confirm lucianogv.com email forwarding — DONE, verified",
-        "Dupixent Shot — severely overdue (since Dec 10, 2025) — take today",
-        "Cancel GoDaddy Microsoft 365 — due Monday, stop billing before you board",
-        "TGVR Issue No. 03 draft — due Monday, 1.5 hrs starting 9:00am",
-        "Talk to Moo about Business Cards — overdue from yesterday",
+        "Issue No. 03 draft \u2014 OVERDUE since Mar 23 \u00b7 blocks 1 & 2 on calendar now",
+        "Pay tax lawyer \u2014 OVERDUE since Mar 24 \u00b7 scheduled Fri Mar 27",
+        "Confirm Peets with Mostafa \u2014 Thu Mar 26 4pm \u00b7 his cell 650-520-8515",
     ],
+    # articles: (CATEGORY, headline, byline, synopsis, why, url)
     "articles": [
         (
             "LEADERSHIP",
-            "COO Excellence: The Next Generation of Leadership",
-            "McKinsey Talks Operations  ·  13 March 2026",
-            "The COO role now sits at the intersection of strategy, execution, and CEO partnership. McKinsey maps the five-part framework: vision, plan, relationships, talent, personal operating model.",
-            "The LGV mandate in print. Read before your next intro call with a PE sponsor.",
-            "https://www.mckinsey.com/capabilities/operations/our-insights/coo-excellence-the-next-generation-of-leadership"
+            "When Senior Leaders Lack People Skills, Transformations Fail",
+            "Harvard Business Review  \u00b7  March 19, 2026",
+            "A chief transformation officer discovered six weeks in that engagement scores had dropped 40% and turnover had doubled \u2014 and no one at the executive table saw it coming. HBR outlines four strategies: diagnose the gap without making it personal, build the skill through repetition not training, redesign the system to compensate, and know when to replace rather than develop.",
+            "The interim operator\u2019s advantage: you see the people-skills gap before the board does. Pattern recognition from day one.",
+            "https://hbr.org/2026/03/when-senior-leaders-lack-people-skills-transformations-fail"
         ),
         (
             "PE / INVESTOR LENS",
-            "Ontario Teachers' Overhauls PE Approach After First Loss in 16 Years",
-            "Bloomberg  ·  10 March 2026",
-            "The $200B fund booked its first PE loss since 2009 — down C$10B — and is retrenching to three sectors only: financial services, technology, and services.",
-            "PE firms showing genuine operational improvement will command a premium at exit. TGVR Issue 03 material.",
-            "https://www.bloomberg.com/news/articles/2026-03-10/spacex-gold-drive-gains-at-ontario-teachers-despite-private-equity-losses"
+            "McKinsey Global Private Markets 2026: CEO Alpha Is the New Value Creation Edge",
+            "McKinsey & Company  \u00b7  February 10, 2026",
+            "McKinsey\u2019s tenth annual private markets report finds that 60\u201370% of PE-backed companies experience a CEO change during ownership, and more than 60% of replacements are first-time CEOs. The firms winning in 2026 are those with operating groups engaged earlier in diligence \u2014 60% now use them to identify bankable improvements before the deal closes.",
+            "This is the TGVR Issue 03 thesis in a single data point. LGV\u2019s value is front-loaded \u2014 that\u2019s the conversation to have with GPs.",
+            "https://www.mckinsey.com/industries/private-capital/our-insights/global-private-markets-report"
         ),
         (
             "CPG / FOOD MANUFACTURING",
-            "Ingredient Supply Chain Strategies in 2026: Domestic Sourcing Now a Must",
-            "Food Business News  ·  January 2026",
-            "Tariff pressure is forcing a hard shift toward domestic sourcing for vanilla, pea protein, and cocoa. Pre-tariff resilience builders are clearly outperforming.",
-            "Know the domestic sourcing argument cold — it is showing up in every PE portfolio board deck.",
-            "https://www.foodbusinessnews.net/articles/29581-ingredient-supply-chain-strategies-in-2026"
+            "Food Giants Cast a Sour Mood on Consumer Spending in 2026",
+            "Food Dive  \u00b7  February 19, 2026",
+            "Major CPG executives warn of a prolonged spending downturn as inflation-weary consumers refuse to return to pre-2022 buying habits. Despite price cuts, marketing investments, and packaging changes, volumes remain weak. Nestl\u00e9 forecasts 1\u20132% category growth. Conagra is holding flat.",
+            "Every PE-backed food portfolio is fighting this right now. Operators who know how to drive volume without destroying margin are the asset.",
+            "https://www.fooddive.com/news/food-giants-cast-a-sour-mood-on-consumer-spending-in-2026/812403/"
         ),
         (
-            "ITALY  ·  SUNDAY WILDCARD",
-            "Italian Wine Exports Cross €8 Billion — Restaurants Still Pour Local",
-            "ItalianFood.net  ·  12 March 2026",
-            "Italy hits €8B in annual exports yet 70–75% of restaurant lists stay hyper-regional. Rising trend: one quality glass over a cheap bottle.",
-            "Sunday Supper editorial angle — the hyperlocal wine story is a great hook for a regional Italian menu post.",
-            "https://news.italianfood.net/2026/03/12/italian-wine-conquers-global-markets/"
+            "ITALY \u2014 FOOD & CULTURE",
+            "Italian Cuisine Named UNESCO Heritage \u2014 2026 Is Its First Full Year",
+            "360ItalyMarket  \u00b7  March 2026",
+            "UNESCO\u2019s December 2025 inscription of Italian cuisine as Intangible Cultural Heritage \u2014 the first time an entire national culinary tradition has received the designation \u2014 is reshaping how Italy positions its food exports globally. Italian food exports hit a record \u20ac70.7 billion.",
+            "Eat Sunday Supper sits at the intersection of every trend driving this: heritage, authenticity, Sunday ritual, family transmission. The UNESCO moment is the hook.",
+            "https://www.360italymarket.com/en/blog/food-trends-2026-b92.html"
         ),
     ],
     "meetings": [
         {
-            "time":      "MON 12:00pm",
-            "title":     "Documentation & Evidence Standards  ·  DCC / Burner Distro",
-            "attendees": "Clint Kellum (DCC), Wes Hein (Mammoth), Skyler Sutton (Mammoth), Evelyn Schaeffer (DCC)",
-            "platform":  "Microsoft Teams  ·  ID: 277 747 295 950 95  ·  Passcode: Q6eS2Lj6",
+            "time":      "10:00am \u2013 4:30pm",
+            "title":     "CFK Booth \u2014 International Pizza Expo",
+            "attendees": "Chefs Feeding Kids team \u00b7 LVCC Booth #3206",
+            "platform":  "In person \u00b7 Las Vegas Convention Center",
             "granola":   None,
-            "lines":     8,
-        },
-        {
-            "time":      "MON 1:35pm",
-            "title":     "✈  SFO → LAS  ·  Southwest #1800",
-            "attendees": "Solo travel",
-            "platform":  "Seat 21E  ·  Conf: CH9MCT  ·  Resorts World check-in 4:00pm  ·  702.676.7024",
-            "granola":   None,
-            "lines":     5,
+            "lines":     6,
         },
     ],
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  UTILITIES
-# ─────────────────────────────────────────────────────────────────────────────
 
+# ---------------------------------------------------------------------------
+# Pomodoro break cadence helper
+# ---------------------------------------------------------------------------
+BREAK_LABELS = {1: "5-min break", 2: "10-min break", 3: "15-min break"}
+BREAK_DURATIONS = {1: "5 min", 2: "10 min", 3: "15 min"}
+
+def inject_pomodoro_breaks(schedule):
+    """
+    Walk the schedule tuples and insert break rows after consecutive task blocks.
+    Break cadence: 1st task → 5 min, 2nd → 10 min, 3rd → 15 min, then resets.
+    A non-task event resets the counter.
+    Returns new list with break rows inserted.
+    Break row format: (time_str, label, "", duration, "BREAK", None)
+    """
+    result = []
+    consecutive = 0
+    for entry in schedule:
+        time_str, title, tag, detail, is_task, granola = entry
+        result.append(entry)
+        if is_task:
+            consecutive += 1
+            step = ((consecutive - 1) % 3) + 1
+            label = BREAK_LABELS[step]
+            dur   = BREAK_DURATIONS[step]
+            result.append((time_str, label, "", dur, "BREAK", None))
+        else:
+            consecutive = 0
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Utility draw functions
+# ---------------------------------------------------------------------------
 def wrap(c, text, font, size, max_w):
     words = text.split()
     lines, line = [], ""
@@ -162,593 +180,508 @@ def draw_text_block(c, text, x, y, max_w, font, size, color, leading):
         y -= leading
     return y
 
-def section_rule(c, label, y, font_size=11):
-    """Section header with trailing rule — bumped to 11pt for reMarkable."""
+def section_rule(c, label, y, page_w, font_size=8.5):
     c.setFont("Helvetica-Bold", font_size)
-    c.setFillColor(CHARCOAL)
+    c.setFillColor(INK)
     c.drawString(ML, y, label)
     tw = c.stringWidth(label, "Helvetica-Bold", font_size)
-    c.setStrokeColor(PALE)
-    c.setLineWidth(0.9)   # was 0.4 — heavier for e-ink
-    c.line(ML + tw + 7, y + font_size * 0.45, W - MR, y + font_size * 0.45)
-    return y - 0.24 * inch
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  LGV LOGO
-# ─────────────────────────────────────────────────────────────────────────────
+    c.setStrokeColor(INK)
+    c.setLineWidth(0.6)
+    c.line(ML + tw + 7, y + font_size * 0.45, page_w - MR, y + font_size * 0.45)
+    return y - 0.22 * inch
 
 def draw_lgv_logo(c, cx, cy, size=0.52):
     badge_h = size * inch * 1.85
     badge_w = size * inch * 2.1
     lgv_size = badge_h * 0.42
-    # Draw LGV with manual letter spacing
-    letter_gap = lgv_size * 0.18
     c.setFont("Helvetica-Bold", lgv_size)
     c.setFillColor(INK)
-    lw = c.stringWidth("L", "Helvetica-Bold", lgv_size)
-    gw = c.stringWidth("G", "Helvetica-Bold", lgv_size)
-    vw = c.stringWidth("V", "Helvetica-Bold", lgv_size)
-    total_w = lw + gw + vw + 2 * letter_gap
+    lgv_txt  = "LGV"
+    lgv_w    = c.stringWidth(lgv_txt, "Helvetica-Bold", lgv_size)
+    letter_gap = lgv_size * 0.18
+    total_w  = lgv_w + letter_gap * (len(lgv_txt) - 1)
     lx = cx - total_w / 2
-    ly = cy + badge_h * 0.06
-    c.drawString(lx, ly, "L")
-    c.drawString(lx + lw + letter_gap, ly, "G")
-    c.drawString(lx + lw + letter_gap + gw + letter_gap, ly, "V")
-    # Rule — pure black
+    for ch in lgv_txt:
+        c.drawString(lx, cy + badge_h * 0.06, ch)
+        lx += c.stringWidth(ch, "Helvetica-Bold", lgv_size) + letter_gap
     rule_y = cy - badge_h * 0.08
-    rule_w = badge_w * 0.72
+    rule_w = badge_w * 0.68
     c.setStrokeColor(INK)
     c.setLineWidth(1.0)
     c.line(cx - rule_w / 2, rule_y, cx + rule_w / 2, rule_y)
-    # Wordmark — pure black
     sub_size = badge_h * 0.115
     c.setFont("Helvetica", sub_size)
     c.setFillColor(INK)
     sub_txt = "LUCIANO GLOBAL VENTURES"
-    sub_w = c.stringWidth(sub_txt, "Helvetica", sub_size)
+    sub_w   = c.stringWidth(sub_txt, "Helvetica", sub_size)
     c.drawString(cx - sub_w / 2, cy - badge_h * 0.33, sub_txt)
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  ARTICLE CELL
-# ─────────────────────────────────────────────────────────────────────────────
-
-def draw_article_cell(c, article, x, y, col_w, floor_y=None):
-    """Draw article cell. floor_y is a hard bottom — nothing draws below it."""
+def draw_article_cell(c, article, x, y, col_w):
     cat, headline, byline, synopsis, why, url = article
-    top_y = y
-
-    def ok(cur_y, margin=0.10):
-        return floor_y is None or cur_y > floor_y + margin * inch
-
-    # Category label
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont("Helvetica-Bold", 7.5)
     c.setFillColor(INK)
-    if ok(y): c.drawString(x, y, cat)
-    y -= 0.15 * inch
-
-    # Rule
-    c.setStrokeColor(PALE)
+    c.drawString(x, y, cat)
+    y -= 0.1 * inch
+    c.setStrokeColor(INK)
     c.setLineWidth(0.6)
-    c.line(x, y + 0.045 * inch, x + col_w, y + 0.045 * inch)
-
-    # Headline
-    hl_top = y
-    hl_lines = wrap(c, headline, "Helvetica-Bold", 10, col_w)
-    c.setFont("Helvetica-Bold", 10)
+    c.line(x, y + 0.04 * inch, x + col_w, y + 0.04 * inch)
+    y -= 0.1 * inch
+    hl_top  = y
+    hl_lines = wrap(c, headline, "Helvetica-Bold", 9.5, col_w)[:2]
+    c.setFont("Helvetica-Bold", 9.5)
     c.setFillColor(INK)
     for ln in hl_lines:
-        if ok(y):
-            c.drawString(x, y, ln)
-            hlw = c.stringWidth(ln, "Helvetica-Bold", 10)
-            c.setStrokeColor(LIGHT_GRAY)
-            c.setLineWidth(0.4)
-            c.line(x, y - 1.5, x + hlw, y - 1.5)
-        y -= 0.155 * inch
-    c.linkURL(url, (x, y, x + col_w, hl_top + 0.14 * inch), relative=0)
-
-    # Byline
-    c.setFont("Helvetica-Bold", 9)
+        c.drawString(x, y, ln)
+        y -= 0.145 * inch
+    c.linkURL(url, (x, y, x + col_w, hl_top + 0.12 * inch), relative=0)
+    c.setFont("Helvetica-Bold", 8.5)
     c.setFillColor(INK)
-    short_by = byline if len(byline) <= 46 else byline[:46] + "…"
-    if ok(y): c.drawString(x, y, short_by)
-    y -= 0.145 * inch
-
-    # Synopsis — hard cap at 3 lines
-    syn_lines = wrap(c, synopsis, "Helvetica", 9.5, col_w)[:3]
-    c.setFont("Helvetica", 9.5)
+    short_by = byline if len(byline) <= 52 else byline[:52] + "\u2026"
+    c.drawString(x, y, short_by)
+    y -= 0.135 * inch
+    syn_lines = wrap(c, synopsis, "Helvetica", 9, col_w)[:3]
+    c.setFont("Helvetica", 9)
     c.setFillColor(INK)
     for ln in syn_lines:
-        if ok(y): c.drawString(x, y, ln)
-        y -= 0.138 * inch
-    y -= 0.03 * inch
-
-    # Why it matters — hard cap at 2 lines
-    why_lines = wrap(c, "▶  " + why, "Helvetica-BoldOblique", 9, col_w)[:2]
-    c.setFont("Helvetica-BoldOblique", 9)
+        c.drawString(x, y, ln)
+        y -= 0.125 * inch
+    y -= 0.02 * inch
+    why_lines = wrap(c, why, "Helvetica-Oblique", 8.5, col_w)[:1]
+    c.setFont("Helvetica-Oblique", 8.5)
     c.setFillColor(INK)
     for ln in why_lines:
-        if ok(y): c.drawString(x, y, ln)
-        y -= 0.132 * inch
-
+        c.drawString(x, y, ln)
+        y -= 0.12 * inch
     return y
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  PAGE 1
-# ─────────────────────────────────────────────────────────────────────────────
 
-def draw_page1(c, data):
+# ---------------------------------------------------------------------------
+# Page 1
+# ---------------------------------------------------------------------------
+def draw_page1(c):
     c.setFillColor(OFF_WHITE)
     c.rect(0, 0, W, H, fill=1, stroke=0)
     y = H - MT
 
-    # ── MASTHEAD ──────────────────────────────────────────────────────────────
     LOGO_R  = 0.44
     logo_cx = W - MR - LOGO_R * inch - 0.38 * inch
 
+    # Masthead rules
     c.setStrokeColor(INK)
-    c.setLineWidth(2.5)   # slightly heavier
+    c.setLineWidth(2.2)
     c.line(ML, y, W - MR, y)
     y -= 0.06 * inch
-    c.setLineWidth(0.7)
+    c.setLineWidth(0.55)
     c.line(ML, y, W - MR, y)
     y -= 0.32 * inch
 
-    # DAILY BRIEF — 28pt (was 27)
     c.setFont("Helvetica-Bold", 28)
     c.setFillColor(INK)
     c.drawString(ML, y, "DAILY BRIEF")
     y -= 0.18 * inch
 
-    # Byline — 12pt (was 10)
-    c.setFont("Helvetica", 12)
-    c.setFillColor(DARK_GRAY)
+    c.setFont("Helvetica", 10)
+    c.setFillColor(INK)
     name_str = "Mark Luciano Ainsworth"
     role_str = "Managing Partner, LGV"
-    day_date = f"{data['day_name']}  ·  {data['date_str']}"
-
+    day_date = DATA["day_name"] + "  \u00b7  " + DATA["date_str"]
     c.drawString(ML, y, name_str)
-    nw = c.stringWidth(name_str, "Helvetica", 12)
-    c.setFillColor(MID_GRAY)
-    c.drawString(ML + nw + 5, y, "·")
-    c.setFillColor(DARK_GRAY)
-    c.drawString(ML + nw + 14, y, role_str)
-    rw = c.stringWidth(role_str, "Helvetica", 12)
-    c.setFont("Helvetica", 11)
-    c.setFillColor(MID_GRAY)
-    pipe_x = ML + nw + 14 + rw + 10
+    nw = c.stringWidth(name_str, "Helvetica", 10)
+    c.drawString(ML + nw + 5, y, "\u00b7")
+    c.drawString(ML + nw + 13, y, role_str)
+    rw = c.stringWidth(role_str, "Helvetica", 10)
+    pipe_x = ML + nw + 13 + rw + 10
+    c.setFont("Helvetica", 9)
     c.drawString(pipe_x, y, "|")
-    c.setFont("Helvetica", 11)
-    c.setFillColor(MID_GRAY)
+    c.setFont("Helvetica", 9.5)
     c.drawString(pipe_x + 10, y, day_date)
-    y -= 0.20 * inch
+    y -= 0.18 * inch
 
     c.setStrokeColor(INK)
-    c.setLineWidth(0.7)
+    c.setLineWidth(0.55)
     c.line(ML, y, W - MR, y)
-    y -= 0.06 * inch
-    c.setLineWidth(2.5)
+    y -= 0.055 * inch
+    c.setLineWidth(2.2)
     c.line(ML, y, W - MR, y)
 
     masthead_top = H - MT
     masthead_bot = y
     logo_cy = (masthead_top + masthead_bot) / 2
     draw_lgv_logo(c, logo_cx, logo_cy, LOGO_R)
+    y -= 0.2 * inch
 
-    y -= 0.14 * inch
-
-    # ── OPERATOR QUOTE — 11pt (was 9.5) ──────────────────────────────────────
-    y = draw_text_block(c, data["operator_quote"], ML, y, CW, "Helvetica-BoldOblique", 11, INK, 0.17 * inch)
-    y -= 0.15 * inch
-
-    # ── WEATHER ───────────────────────────────────────────────────────────────
-    y = section_rule(c, "WEATHER", y)
-
-    # Weather lines — 11pt (was 9.5)
-    c.setFont("Helvetica", 11)
+    # Quote
+    c.setFont("Helvetica-Oblique", 9.5)
     c.setFillColor(INK)
-    c.drawString(ML, y, data["weather_home"])
-    y -= 0.175 * inch
+    for ln in wrap(c, DATA["operator_quote"], "Helvetica-Oblique", 9.5, CW * 0.88):
+        c.drawString(ML, y, ln)
+        y -= 0.145 * inch
+    y -= 0.08 * inch
 
-    if data.get("weather_travel"):
-        c.setFillColor(INK)
-        c.drawString(ML, y, data["weather_travel"])
-        if data.get("travel_label"):
-            tw2 = c.stringWidth(data["weather_travel"], "Helvetica", 11)
-            c.setFont("Helvetica-Bold", 9)
-            c.setFillColor(INK)
-            c.drawString(ML + tw2 + 8, y, data["travel_label"])
-    y -= 0.24 * inch
+    # Weather
+    y = section_rule(c, "WEATHER", y, W)
+    c.setFont("Helvetica", 9.5)
+    c.setFillColor(INK)
+    c.drawString(ML, y, DATA["weather_home"])
+    y -= 0.155 * inch
+    if DATA["weather_travel"]:
+        c.drawString(ML, y, DATA["weather_travel"])
+        tw = c.stringWidth(DATA["weather_travel"], "Helvetica", 9.5)
+        if DATA["travel_label"]:
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(ML + tw + 10, y, DATA["travel_label"])
+        y -= 0.155 * inch
+    y -= 0.08 * inch
 
-    # ── TWO-COLUMN: SCHEDULE (left) + THIS WEEK (right) ───────────────────────
+    # Two-column: TODAY'S SCHEDULE (left) | THIS WEEK (right)
     COL_GAP = 0.22 * inch
-    L_W     = CW * 0.595
-    R_W     = CW - L_W - COL_GAP
-    LX      = ML
-    RX      = ML + L_W + COL_GAP
+    L_W = CW * 0.595
+    R_W = CW - L_W - COL_GAP
+    LX  = ML
+    RX  = ML + L_W + COL_GAP
     col_top = y
 
-    # LEFT — TODAY'S SCHEDULE
+    # --- Left: schedule with Pomodoro breaks injected ---
     ly = col_top
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(CHARCOAL)
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(INK)
     c.drawString(LX, ly, "TODAY'S SCHEDULE")
-    htw = c.stringWidth("TODAY'S SCHEDULE", "Helvetica-Bold", 11)
-    c.setStrokeColor(PALE)
-    c.setLineWidth(0.8)
+    htw = c.stringWidth("TODAY'S SCHEDULE", "Helvetica-Bold", 9)
+    c.setStrokeColor(INK)
+    c.setLineWidth(0.5)
     c.line(LX + htw + 6, ly + 0.055 * inch, LX + L_W, ly + 0.055 * inch)
-    ly -= 0.22 * inch
+    ly -= 0.2 * inch
 
-    EVENT_FONT  = 11   # was 9
-    DETAIL_FONT = 9.5  # was 7.8
-    EVENT_LEAD  = 0.165 * inch
-    DETAIL_LEAD = 0.148 * inch
-    GAP_BETWEEN = 0.12  * inch
+    expanded_schedule = inject_pomodoro_breaks(DATA["schedule"])
 
-    for time_str, title, tag, detail, is_task, granola in data["schedule"]:
-        c.setFont("Helvetica-Bold", DETAIL_FONT)
+    for entry in expanded_schedule:
+        time_str, title, tag, detail, is_task, granola = entry
+
+        if is_task == "BREAK":
+            # Render break row — small, italic, indented
+            c.setFont("Helvetica-Oblique", 7.5)
+            c.setFillColor(INK)
+            c.drawString(LX + 0.44 * inch, ly, f"\u21b3 {title}  \u00b7  {detail}")
+            ly -= 0.135 * inch
+            continue
+
+        c.setFont("Helvetica", 8)
         c.setFillColor(INK)
         c.drawString(LX, ly, time_str)
-        indent = 0.48 * inch
-        max_title_w = L_W - indent - 0.05 * inch
+        indent = 0.44 * inch
         fn = "Helvetica" if is_task else "Helvetica-Bold"
-        c.setFont(fn, EVENT_FONT)
-        c.setFillColor(DARK_GRAY if is_task else INK)
-        display = title
-        while c.stringWidth(display, fn, EVENT_FONT) > max_title_w - 0.28 * inch and len(display) > 8:
-            display = display[:-4] + "…"
-        c.drawString(LX + indent, ly, display)
-        if tag:
-            dw = c.stringWidth(display, fn, EVENT_FONT)
-            c.setFont("Helvetica", 8)
-            c.setFillColor(MID_GRAY)
-            if LX + indent + dw + 5 + c.stringWidth(tag, "Helvetica", 8) < LX + L_W:
+        c.setFont(fn, 9.5)
+        c.setFillColor(INK)
+
+        if is_task:
+            display   = title
+            due_str   = "  \u00b7  due today" if "due today" in detail.lower() else ""
+            max_w     = L_W - indent - 0.05 * inch
+            while c.stringWidth(display, fn, 9.5) > max_w - 0.3 * inch and len(display) > 8:
+                display = display[:-4] + "\u2026"
+            c.drawString(LX + indent, ly, display)
+            dw = c.stringWidth(display, fn, 9.5)
+            if tag:
+                c.setFont("Helvetica", 7.5)
                 c.drawString(LX + indent + dw + 5, ly, tag)
-        ly -= EVENT_LEAD
-        c.setFont("Helvetica-Oblique", DETAIL_FONT)
-        c.setFillColor(INK)
-        c.drawString(LX + indent, ly, detail)
-        ly -= DETAIL_LEAD
-        if granola:
-            strip_h = 9 * 1.05 + 3
-            c.setFillColor(GRANOLA_BG)
-            c.rect(LX + indent - 3, ly - 2, L_W - indent + 3, strip_h, fill=1, stroke=0)
-            c.setFont("Helvetica-Bold", 7.5)
-            c.setFillColor(DARK_GRAY)
-            label_txt = "◆ "
-            c.drawString(LX + indent, ly + 1, label_txt)
-            lw2 = c.stringWidth(label_txt, "Helvetica-Bold", 7.5)
-            c.setFont("Helvetica", 9)
-            c.setFillColor(DARK_GRAY)
-            g_max = L_W - indent - lw2 - 2
-            g_text = granola
-            while c.stringWidth(g_text, "Helvetica", 9) > g_max and len(g_text) > 12:
-                g_text = g_text[:-4] + "…"
-            c.drawString(LX + indent + lw2, ly + 1, g_text)
-            ly -= (9 * 0.0138 * inch + 0.05 * inch)
-        ly -= GAP_BETWEEN
+                dw2 = dw + 5 + c.stringWidth(tag, "Helvetica", 7.5)
+            else:
+                dw2 = dw
+            if due_str:
+                c.setFont("Helvetica-Oblique", 7.5)
+                c.drawString(LX + indent + dw2 + 4, ly, "\u00b7  due today")
+            ly -= 0.165 * inch
+        else:
+            max_title_w = L_W - indent - 0.05 * inch
+            display = title
+            while c.stringWidth(display, fn, 9.5) > max_title_w - 0.25 * inch and len(display) > 8:
+                display = display[:-4] + "\u2026"
+            c.drawString(LX + indent, ly, display)
+            if tag:
+                dw = c.stringWidth(display, fn, 9.5)
+                c.setFont("Helvetica", 7.5)
+                if LX + indent + dw + 5 + c.stringWidth(tag, "Helvetica", 7.5) < LX + L_W:
+                    c.drawString(LX + indent + dw + 5, ly, tag)
+            ly -= 0.148 * inch
+            c.setFont("Helvetica-Oblique", 8)
+            c.drawString(LX + indent, ly, detail)
+            ly -= 0.13 * inch
+            ly -= 0.08 * inch
 
-    # RIGHT — THIS WEEK
+    # --- Right: This Week ---
     ry = col_top
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(CHARCOAL)
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(INK)
     c.drawString(RX, ry, "THIS WEEK")
-    htw2 = c.stringWidth("THIS WEEK", "Helvetica-Bold", 11)
-    c.setStrokeColor(PALE)
-    c.setLineWidth(0.8)
+    htw2 = c.stringWidth("THIS WEEK", "Helvetica-Bold", 9)
+    c.setStrokeColor(INK)
+    c.setLineWidth(0.5)
     c.line(RX + htw2 + 6, ry + 0.055 * inch, RX + R_W, ry + 0.055 * inch)
-    ry -= 0.22 * inch
-
-    for day, detail in data["week_events"]:
-        if day:
-            c.setFont("Helvetica-Bold", 11)
-            c.setFillColor(CHARCOAL)
-            c.drawString(RX, ry, day)
-        c.setFont("Helvetica", 10)
+    ry -= 0.2 * inch
+    for day, detail in DATA["week_events"]:
+        c.setFont("Helvetica-Bold", 9.5)
         c.setFillColor(INK)
+        c.drawString(RX, ry, day)
+        c.setFont("Helvetica", 9)
         c.drawString(RX + 0.36 * inch, ry, detail)
         ry -= 0.175 * inch
 
-    sep_x = LX + L_W + COL_GAP * 0.5
+    # Column separator — scoped to row height
+    sep_x   = LX + L_W + COL_GAP * 0.5
     sep_bot = min(ly, ry) - 0.04 * inch
-    c.setStrokeColor(PALE)
+    c.setStrokeColor(INK)
     c.setLineWidth(0.6)
     c.line(sep_x, sep_bot, sep_x, col_top + 0.08 * inch)
-
     y = min(ly, ry) - 0.06 * inch
 
-    # ── FAMILY & HOME ─────────────────────────────────────────────────────────
-    y = section_rule(c, "FAMILY & HOME", y)
-
+    # Family & Home — birthdays only in right column
+    y = section_rule(c, "FAMILY & HOME", y, W)
     FAM_GAP = 0.2 * inch
     FAM_LW  = CW * 0.56
-    FAM_RW  = CW - FAM_LW - FAM_GAP
     FAM_LX  = ML
     FAM_RX  = ML + FAM_LW + FAM_GAP
 
     ly_f = y
-    c.setFont("Helvetica-Bold", 9)
-    c.setFillColor(MID_GRAY)
-    c.drawString(FAM_LX, ly_f, "HOME")
-    htw_f = c.stringWidth("HOME", "Helvetica-Bold", 9)
-    c.setStrokeColor(PALE)
-    c.setLineWidth(0.6)
-    c.line(FAM_LX + htw_f + 5, ly_f + 0.045 * inch, FAM_LX + FAM_LW, ly_f + 0.045 * inch)
-    ly_f -= 0.175 * inch
-
-    for lbl, item in data["family_home"]:
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColor(MID_GRAY)
-        c.drawString(FAM_LX, ly_f, lbl)
-        c.setFont("Helvetica", 10)
-        c.setFillColor(DARK_GRAY)
-        # Fixed indent of 0.52 inch — enough for longest label "O/DUE"
-        c.drawString(FAM_LX + 0.52 * inch, ly_f, item)
-        ly_f -= 0.168 * inch
-
     ry_f = y
-    bday_hdr = "BIRTHDAYS THIS WEEK"
-    c.setFont("Helvetica-Bold", 9)
-    c.setFillColor(MID_GRAY)
-    c.drawString(FAM_RX, ry_f, bday_hdr)
-    htw_r = c.stringWidth(bday_hdr, "Helvetica-Bold", 9)
-    c.setStrokeColor(PALE)
-    c.setLineWidth(0.6)
-    c.line(FAM_RX + htw_r + 5, ry_f + 0.045 * inch, FAM_RX + FAM_RW, ry_f + 0.045 * inch)
-    ry_f -= 0.175 * inch
-
-    for day, name in data["birthdays"]:
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColor(MID_GRAY)
+    c.setFont("Helvetica-Bold", 7.5)
+    c.setFillColor(INK)
+    c.drawString(FAM_RX, ry_f, "BIRTHDAYS THIS WEEK")
+    ry_f -= 0.155 * inch
+    for day, name in DATA["family_home"]:
+        c.setFont("Helvetica-Bold", 8.5)
+        c.setFillColor(INK)
         c.drawString(FAM_RX, ry_f, day)
-        c.setFont("Helvetica", 10)
-        c.setFillColor(INK)
-        dw = c.stringWidth(day, "Helvetica-Bold", 10)
-        c.drawString(FAM_RX + max(dw + 8, 0.75 * inch), ry_f, name)
-        ry_f -= 0.168 * inch
+        dw = c.stringWidth(day, "Helvetica-Bold", 8.5)
+        c.setFont("Helvetica", 9.5)
+        c.drawString(FAM_RX + max(dw + 8, 0.56 * inch), ry_f, name)
+        ry_f -= 0.16 * inch
 
-    sep_fx = FAM_LX + FAM_LW + FAM_GAP * 0.5
-    c.setStrokeColor(PALE)
+    c.setStrokeColor(INK)
     c.setLineWidth(0.5)
+    sep_fx = FAM_LX + FAM_LW + FAM_GAP * 0.5
     c.line(sep_fx, min(ly_f, ry_f) - 0.02 * inch, sep_fx, y + 0.1 * inch)
+    y = min(ly_f, ry_f) - 0.08 * inch
 
-    y = min(ly_f, ry_f) - 0.06 * inch
-
-    # ── URGENT ────────────────────────────────────────────────────────────────
-    y = section_rule(c, "URGENT", y)
-
-    for i, item in enumerate(data["urgent"], 1):
-        c.setFont("Helvetica-Bold", 11)
-        c.setFillColor(CHARCOAL)
-        c.drawString(ML, y, f"{i}.")
-        c.setFont("Helvetica", 11)
+    # Urgent
+    y = section_rule(c, "URGENT", y, W)
+    for i, item in enumerate(DATA["urgent"], 1):
+        c.setFont("Helvetica-Bold", 9.5)
         c.setFillColor(INK)
-        lines = wrap(c, item, "Helvetica", 11, CW - 0.24 * inch)
-        for ln in lines:
-            c.drawString(ML + 0.22 * inch, y, ln)
-            y -= 0.160 * inch
-        if not lines:
-            y -= 0.160 * inch
-        y -= 0.02 * inch
+        c.drawString(ML, y, f"{i}.")
+        c.setFont("Helvetica", 9.5)
+        c.drawString(ML + 0.22 * inch, y, item)
+        y -= 0.165 * inch
+    y -= 0.1 * inch
 
-    y -= 0.06 * inch
-
-    # ── READING LIST (2×2) ────────────────────────────────────────────────────
-    y = section_rule(c, "READING LIST", y)
-
+    # Reading List — 2×2 grid
+    y = section_rule(c, "READING LIST", y, W)
     GAP   = 0.18 * inch
     ACW   = (CW - GAP) / 2
     col1x = ML
     col2x = ML + ACW + GAP
+    sep_ax = col1x + ACW + GAP * 0.5
 
-    # Calculate available space from current y to footer, split into 2 equal rows
-    # Reserve space for: divider rule (0.08) + footer area (MB + 0.2in)
-    available = y - MB - 0.18 * inch
-    # Each row gets half minus the divider gap (0.16 total: 0.08 above + 0.08 below)
-    ROW_H = (available - 0.16 * inch) / 2
+    avail    = y - MB - 0.12 * inch
+    row_h    = avail / 2
+    row1_top = y
+    row1_bot = y - row_h
+    row2_top = row1_bot - 0.14 * inch
+    row2_bot = row2_top - row_h
 
-    row1y = y
-    row1_floor = row1y - ROW_H
-    y1a = draw_article_cell(c, data["articles"][0], col1x, row1y, ACW, floor_y=row1_floor)
-    y1b = draw_article_cell(c, data["articles"][1], col2x, row1y, ACW, floor_y=row1_floor)
-    # Row 2 starts exactly at row1_floor — equal height guaranteed
-    y = row1_floor - 0.08 * inch
-
-    c.setStrokeColor(PALE)
+    draw_article_cell(c, DATA["articles"][0], col1x, row1_top, ACW)
+    draw_article_cell(c, DATA["articles"][1], col2x, row1_top, ACW)
+    c.setFillColor(OFF_WHITE)
+    c.rect(ML, row1_bot - 0.06 * inch, CW, 0.1 * inch, fill=1, stroke=0)
+    c.setStrokeColor(INK)
+    c.setLineWidth(0.4)
+    c.line(sep_ax, row1_bot + 0.02 * inch, sep_ax, row1_top - 0.05 * inch)
+    c.setStrokeColor(INK)
     c.setLineWidth(0.6)
-    c.line(ML, y + 0.04 * inch, W - MR, y + 0.04 * inch)
-    y -= 0.08 * inch
+    c.line(ML, row1_bot, W - MR, row1_bot)
 
-    row2y = y
-    row2_floor = row2y - ROW_H
-    draw_article_cell(c, data["articles"][2], col1x, row2y, ACW, floor_y=row2_floor)
-    draw_article_cell(c, data["articles"][3], col2x, row2y, ACW, floor_y=row2_floor)
+    draw_article_cell(c, DATA["articles"][2], col1x, row2_top, ACW)
+    draw_article_cell(c, DATA["articles"][3], col2x, row2_top, ACW)
+    c.setFillColor(OFF_WHITE)
+    c.rect(ML, MB, CW, 0.16 * inch, fill=1, stroke=0)
+    c.setStrokeColor(INK)
+    c.setLineWidth(0.4)
+    c.line(sep_ax, row2_bot + 0.02 * inch, sep_ax, row1_bot)
 
-    # ── FOOTER — 8pt (was 6.5) ────────────────────────────────────────────────
+    # Footer
     fy = MB
-    c.setStrokeColor(PALE)
-    c.setLineWidth(0.6)
-    c.line(ML, fy + 0.13 * inch, W - MR, fy + 0.13 * inch)
-    c.setFont("Helvetica", 8)
+    c.setStrokeColor(INK)
+    c.setLineWidth(0.4)
+    c.line(ML, fy + 0.14 * inch, W - MR, fy + 0.14 * inch)
+    c.setFont("Helvetica", 6.5)
     c.setFillColor(INK)
-    c.drawString(ML, fy, "DAILY BRIEF  ·  Luciano Global Ventures Inc.  ·  Confidential")
+    c.drawString(ML, fy, "DAILY BRIEF  \u00b7  Luciano Global Ventures Inc.  \u00b7  Confidential")
     c.drawRightString(W - MR, fy, "1 of 2")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  PAGE 2
-# ─────────────────────────────────────────────────────────────────────────────
-
-def draw_page2(c, data):
+# ---------------------------------------------------------------------------
+# Page 2
+# ---------------------------------------------------------------------------
+def draw_page2(c):
     c.setFillColor(OFF_WHITE)
     c.rect(0, 0, W, H, fill=1, stroke=0)
     y = H - MT
 
-    # ── PAGE 2 HEADER ─────────────────────────────────────────────────────────
     c.setStrokeColor(INK)
-    c.setLineWidth(2.5)
+    c.setLineWidth(2)
     c.line(ML, y, W - MR, y)
-    y -= 0.17 * inch
-
-    c.setFont("Helvetica-Bold", 15)   # was 13
+    y -= 0.16 * inch
+    c.setFont("Helvetica-Bold", 13)
     c.setFillColor(INK)
-    c.drawString(ML, y, "MEETING NOTES  ·  MONDAY PREVIEW")
-
-    c.setFont("Helvetica", 12)
-    c.setFillColor(MID_GRAY)
-    c.drawRightString(W - MR, y, f"{data['date_str']}  →  23/03/26")
-
-    y -= 0.11 * inch
+    c.drawString(ML, y, "MEETING NOTES")
+    c.setFont("Helvetica", 10)
+    c.drawRightString(W - MR, y, DATA["date_str"])
+    y -= 0.1 * inch
     c.setStrokeColor(INK)
-    c.setLineWidth(0.8)
+    c.setLineWidth(0.6)
     c.line(ML, y, W - MR, y)
-    y -= 0.24 * inch
+    y -= 0.22 * inch
 
-    # Granola note — 10pt (was 8)
-    c.setFont("Helvetica-Oblique", 10)
-    c.setFillColor(INK)
-    c.drawString(ML, y, "Granola: not connected this session — ruled lines below are open for pen notes.")
-    y -= 0.26 * inch
-
-    # ── MEETING BLOCKS ────────────────────────────────────────────────────────
-    for m in data["meetings"]:
-        bar_h = 0.27 * inch
-        c.setFillColor(HexColor('#E5E5E3'))
+    for m in DATA["meetings"]:
+        bar_h = 0.245 * inch
+        c.setFillColor(HexColor('#EBEBEA'))
         c.rect(ML, y - 0.015 * inch, CW, bar_h, fill=1, stroke=0)
-
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColor(CHARCOAL)
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(INK)
         c.drawString(ML + 0.07 * inch, y + bar_h * 0.28, m["time"])
-
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColor(INK)
-        c.drawString(ML + 0.78 * inch, y + bar_h * 0.28, m["title"])
-        y -= (bar_h + 0.05 * inch)
-
-        # Attendees — 10pt (was 8)
-        c.setFont("Helvetica-Oblique", 10)
-        c.setFillColor(INK)
-        c.drawString(ML, y, "Attendees:  " + m["attendees"])
-        y -= 0.175 * inch
-
-        # Platform — 9.5pt (was 7.8)
-        c.setFont("Helvetica-Oblique", 9.5)
-        c.setFillColor(INK)
-        c.drawString(ML, y, m["platform"])
-        y -= 0.195 * inch
-
-        # Ruled note lines — slightly taller spacing
+        c.drawString(ML + 0.75 * inch, y + bar_h * 0.28, m["title"])
+        y -= (bar_h + 0.06 * inch)
+        c.setFont("Helvetica-Oblique", 8.5)
+        c.drawString(ML, y, "Team:  " + m["attendees"])
+        y -= 0.2 * inch
+        c.setFont("Helvetica-Oblique", 8.5)
+        granola_note = m["granola"] if m["granola"] else "Granola notes will appear here when connected"
+        c.drawString(ML, y, m["platform"] + "  \u00b7  " + granola_note)
+        y -= 0.22 * inch
         for _ in range(m["lines"]):
-            c.setStrokeColor(PALE)
-            c.setLineWidth(0.6)
+            c.setStrokeColor(INK)
+            c.setLineWidth(0.5)
             c.line(ML, y, W - MR, y)
-            y -= 0.265 * inch
+            y -= 0.32 * inch
+        y -= 0.14 * inch
 
-        y -= 0.15 * inch
+    # TGVR writing block — hardcoded for today if TGVR draft is in schedule
+    tgvr_on_schedule = any("[TGVR]" in str(s[2]) for s in DATA["schedule"])
+    if tgvr_on_schedule:
+        bar_h = 0.245 * inch
+        c.setFillColor(HexColor('#EBEBEA'))
+        c.rect(ML, y - 0.015 * inch, CW, bar_h, fill=1, stroke=0)
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(INK)
+        c.drawString(ML + 0.07 * inch, y + bar_h * 0.28, "9:00am")
+        c.drawString(ML + 0.75 * inch, y + bar_h * 0.28, "TGVR Issue No. 03 Draft \u2014 Writing Session")
+        y -= (bar_h + 0.06 * inch)
+        c.setFont("Helvetica-Oblique", 8.5)
+        c.drawString(ML, y, "Blocks 1 & 2 of 3  \u00b7  30/30/30  \u00b7  Overdue from Mar 23  \u00b7  Block 3 scheduled Wed Mar 25 9am")
+        y -= 0.2 * inch
+        for _ in range(5):
+            c.setStrokeColor(INK)
+            c.setLineWidth(0.5)
+            c.line(ML, y, W - MR, y)
+            y -= 0.32 * inch
+        y -= 0.1 * inch
 
-    # ── DIVIDER ───────────────────────────────────────────────────────────────
+    # End-of-day divider
     c.setStrokeColor(INK)
-    c.setLineWidth(2.5)
+    c.setLineWidth(2)
     c.line(ML, y, W - MR, y)
-    y -= 0.045 * inch
-    c.setLineWidth(0.7)
+    y -= 0.04 * inch
+    c.setLineWidth(0.5)
     c.line(ML, y, W - MR, y)
-    y -= 0.24 * inch
+    y -= 0.22 * inch
 
-    # ── END OF DAY ────────────────────────────────────────────────────────────
-    c.setFont("Helvetica-Bold", 15)   # was 13
+    c.setFont("Helvetica-Bold", 13)
     c.setFillColor(INK)
     c.drawString(ML, y, "END OF DAY")
-    c.setFont("Helvetica", 10)
-    c.setFillColor(INK)
+    c.setFont("Helvetica", 8.5)
     c.drawRightString(W - MR, y, "complete before sleep")
-
-    y -= 0.09 * inch
+    y -= 0.08 * inch
     c.setStrokeColor(INK)
-    c.setLineWidth(0.7)
+    c.setLineWidth(0.5)
     c.line(ML, y, W - MR, y)
-    y -= 0.24 * inch
+    y -= 0.22 * inch
 
     H_COL = CW * 0.5 - 0.1 * inch
     LX2   = ML
     RX2   = ML + H_COL + 0.2 * inch
 
     ly2 = y
-    c.setFont("Helvetica-Bold", 10)
-    c.setFillColor(CHARCOAL)
+    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(INK)
     c.drawString(LX2, ly2, "3 THINGS THAT MADE TODAY GREAT")
-    ly2 -= 0.20 * inch
+    ly2 -= 0.32 * inch
     for i in range(3):
-        c.setFont("Helvetica", 11)
-        c.setFillColor(MID_GRAY)
+        c.setFont("Helvetica", 9.5)
         c.drawString(LX2, ly2, f"{i+1}.")
-        c.setStrokeColor(PALE)
-        c.setLineWidth(0.6)
+        c.setStrokeColor(INK)
+        c.setLineWidth(0.5)
         c.line(LX2 + 0.22 * inch, ly2, LX2 + H_COL, ly2)
-        ly2 -= 0.29 * inch
+        ly2 -= 0.32 * inch
 
     ry2 = y
-    c.setFont("Helvetica-Bold", 10)
-    c.setFillColor(CHARCOAL)
-    c.drawString(RX2, ry2, "3 THINGS THAT WOULD MAKE")
-    ry2 -= 0.145 * inch
-    c.drawString(RX2, ry2, "TOMORROW GREAT")
-    ry2 -= 0.20 * inch
+    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(INK)
+    c.drawString(RX2, ry2, "3 THINGS THAT WOULD MAKE TOMORROW GREAT")
+    ry2 -= 0.32 * inch
     for i in range(3):
-        c.setFont("Helvetica", 11)
-        c.setFillColor(MID_GRAY)
+        c.setFont("Helvetica", 9.5)
         c.drawString(RX2, ry2, f"{i+1}.")
-        c.setStrokeColor(PALE)
-        c.setLineWidth(0.6)
+        c.setStrokeColor(INK)
+        c.setLineWidth(0.5)
         c.line(RX2 + 0.22 * inch, ry2, RX2 + H_COL, ry2)
-        ry2 -= 0.29 * inch
+        ry2 -= 0.32 * inch
 
-    y = min(ly2, ry2) - 0.22 * inch
-
-    c.setStrokeColor(PALE)
-    c.setLineWidth(0.5)
+    y = min(ly2, ry2) - 0.18 * inch
+    c.setStrokeColor(INK)
+    c.setLineWidth(0.4)
     c.line(ML, y + 0.06 * inch, W - MR, y + 0.06 * inch)
-    y -= 0.05 * inch
+    y -= 0.06 * inch
 
-    c.setFont("Helvetica-Bold", 10)
-    c.setFillColor(CHARCOAL)
-    c.drawString(ML, y - 0.11 * inch, "TODAY'S NOTE")
-    c.setFont("Helvetica", 9)
+    c.setFont("Helvetica-Bold", 8)
     c.setFillColor(INK)
-    c.drawRightString(W - MR, y - 0.11 * inch, "four lines · no prompts · just space")
-    y -= 0.30 * inch
-
+    c.drawString(ML, y - 0.1 * inch, "TODAY'S NOTE")
+    c.setFont("Helvetica", 7)
+    c.drawRightString(W - MR, y - 0.1 * inch, "four lines  \u00b7  no prompts  \u00b7  just space")
+    y -= 0.28 * inch
     for _ in range(4):
-        c.setStrokeColor(PALE)
-        c.setLineWidth(0.6)
+        c.setStrokeColor(INK)
+        c.setLineWidth(0.5)
         c.line(ML, y, W - MR, y)
-        y -= 0.30 * inch
+        y -= 0.32 * inch
 
-    # ── FOOTER — 8pt (was 6.5) ────────────────────────────────────────────────
     fy = MB
-    c.setStrokeColor(PALE)
-    c.setLineWidth(0.6)
-    c.line(ML, fy + 0.13 * inch, W - MR, fy + 0.13 * inch)
-    c.setFont("Helvetica", 8)
+    c.setStrokeColor(INK)
+    c.setLineWidth(0.4)
+    c.line(ML, fy + 0.14 * inch, W - MR, fy + 0.14 * inch)
+    c.setFont("Helvetica", 6.5)
     c.setFillColor(INK)
-    c.drawString(ML, fy, "DAILY BRIEF  ·  Luciano Global Ventures Inc.  ·  Confidential")
+    c.drawString(ML, fy, "DAILY BRIEF  \u00b7  Luciano Global Ventures Inc.  \u00b7  Confidential")
     c.drawRightString(W - MR, fy, "2 of 2")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  MAIN
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+def create():
+    # Date-agnostic output path — derives filename from DATA["date_str"]
+    ds    = DATA["date_str"].replace("/", ".")   # "24/03/26" → "24.03.26"
+    parts = ds.split(".")
+    if len(parts) == 3:
+        filename = f"Daily Brief {parts[0]}.{parts[1]}.20{parts[2]}.pdf"
+    else:
+        filename = f"Daily Brief {ds}.pdf"
+    out = os.path.join("/mnt/user-data/outputs", filename)
+    c   = canvas.Canvas(out, pagesize=letter)
+    c.setTitle(f"Daily Brief \u2014 {DATA['date_str']}")
+    c.setAuthor("Mark Luciano Ainsworth \u2014 LGV")
+    draw_page1(c)
+    c.showPage()
+    draw_page2(c)
+    c.save()
+    print(f"Done: {out}")
 
-def create(out_path):
-    cv = canvas.Canvas(out_path, pagesize=letter)
-    cv.setTitle(f"Daily Brief — {DATA['date_str']} — LGV")
-    cv.setAuthor("Mark Luciano Ainsworth — LGV")
-    draw_page1(cv, DATA)
-    cv.showPage()
-    draw_page2(cv, DATA)
-    cv.save()
-    print(f"PDF written: {out_path}")
-
-if __name__ == "__main__":
-    import sys
-    out = sys.argv[1] if len(sys.argv) > 1 else "/home/claude/Daily Brief 22.03.2026.pdf"
-    create(out)
+create()
