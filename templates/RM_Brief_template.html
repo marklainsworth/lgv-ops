@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Brief — {{date_dot}}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500&display=swap');
+
+  :root {
+    --ink:    #1E1E1C;
+    --gold:   #C8B89A;
+    --paper:  #FAF8F4;
+    --light:  #F0EDE7;
+    --rule:   #D0C8BC;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Jost', sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 40px 48px 60px;
+  }
+
+  /* Page 1 wrapper — flex column so reading list pins to bottom */
+  .page1 {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .page1-content {
+    flex: 1; /* grows to fill space above reading list */
+  }
+
+  .reading-list-anchor {
+    margin-top: auto; /* pushes reading list to bottom */
+    padding-top: 16px;
+  }
+
+  /* ── HEADER ─────────────────────────────────────── */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 6px;
+  }
+
+  .header-left h1 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 38px;
+    font-weight: 300;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+
+  .header-left .byline {
+    font-family: 'Jost', sans-serif;
+    font-size: 10px;
+    font-weight: 300;
+    letter-spacing: 1.5px;
+    color: var(--ink);
+    margin-top: 4px;
+  }
+
+  .header-right {
+    text-align: right;
+  }
+
+  .header-right .lgv {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    font-weight: 300;
+    letter-spacing: 6px;
+    line-height: 1;
+  }
+
+  .header-right .firm {
+    font-family: 'Jost', sans-serif;
+    font-size: 8px;
+    font-weight: 300;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-top: 3px;
+  }
+
+  .header-rule {
+    border: none;
+    border-top: 0.5px solid var(--rule);
+    margin-bottom: 14px;
+  }
+
+  /* ── QUOTE ───────────────────────────────────────── */
+  .quote {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 13px;
+    font-style: italic;
+    color: #555;
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 0.5px solid var(--rule);
+  }
+
+  /* ── SECTION RULE ────────────────────────────────── */
+  .section-label {
+    font-family: 'Jost', sans-serif;
+    font-size: 8.5px;
+    font-weight: 500;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    margin-top: 20px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 0.5px;
+    background: var(--ink);
+  }
+
+  /* ── WEATHER ─────────────────────────────────────── */
+  .weather {
+    font-size: 11.5px;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .weather .dot { color: var(--gold); }
+  .weather .tag {
+    font-size: 8px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 1px 6px;
+    margin-left: 4px;
+  }
+
+  /* ── TWO-COLUMN LAYOUT ───────────────────────────── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-bottom: 4px;
+  }
+
+  /* ── SCHEDULE ────────────────────────────────────── */
+  .schedule-row {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 10px;
+    margin-bottom: 8px;
+    align-items: start;
+  }
+
+  .schedule-time {
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    color: #666;
+    padding-top: 1px;
+  }
+
+  .schedule-title {
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .schedule-tag {
+    font-size: 8px;
+    font-weight: 400;
+    letter-spacing: 1px;
+    color: #888;
+    margin-left: 4px;
+  }
+
+  .schedule-detail {
+    font-size: 10px;
+    font-style: italic;
+    color: #666;
+    font-family: 'Cormorant Garamond', serif;
+    margin-top: 1px;
+  }
+
+  /* ── THIS WEEK ───────────────────────────────────── */
+  .week-row {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 8px;
+    margin-bottom: 7px;
+    align-items: start;
+  }
+
+  .week-day {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    padding-top: 1px;
+  }
+
+  .week-detail {
+    font-size: 10px;
+    font-weight: 300;
+    line-height: 1.45;
+    color: #333;
+  }
+
+  /* ── FAMILY & HOME ───────────────────────────────── */
+  .family-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .birthday-label {
+    font-size: 8px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    color: #666;
+  }
+
+  .birthday-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 5px;
+    align-items: baseline;
+  }
+
+  .birthday-day {
+    font-size: 10px;
+    font-weight: 500;
+    min-width: 44px;
+  }
+
+  .birthday-name {
+    font-size: 11px;
+    font-weight: 300;
+  }
+
+  /* ── URGENT ──────────────────────────────────────── */
+  .urgent-item {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 6px;
+    margin-bottom: 7px;
+    align-items: start;
+  }
+
+  .urgent-num {
+    font-size: 10px;
+    font-weight: 500;
+    padding-top: 1px;
+  }
+
+  .urgent-text {
+    font-size: 11px;
+    font-weight: 300;
+    line-height: 1.45;
+  }
+
+  /* ── READING LIST ────────────────────────────────── */
+  .reading-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px 32px;
+    margin-top: 4px;
+  }
+
+  .article-cell {
+    padding-top: 10px;
+    border-top: 0.5px solid var(--rule);
+  }
+
+  .article-category {
+    font-size: 7.5px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 6px;
+  }
+
+  .article-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.25;
+    margin-bottom: 3px;
+  }
+
+  .article-title a {
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .article-title a:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--gold);
+  }
+
+  .article-source {
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    color: #888;
+    margin-bottom: 8px;
+  }
+
+  .article-body {
+    font-size: 10.5px;
+    font-weight: 300;
+    line-height: 1.55;
+    color: #333;
+    margin-bottom: 7px;
+  }
+
+  .article-insight {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 11px;
+    font-style: italic;
+    color: #666;
+    line-height: 1.45;
+  }
+
+  /* ── PRINT / PAGE CONTROL ───────────────────────── */
+  @media print {
+    body {
+      padding: 16px 32px 20px;
+      font-size: 10px;
+    }
+    .page1 {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .page1-content {
+      flex: 1;
+    }
+    .reading-list-anchor {
+      margin-top: auto;
+      padding-top: 8px;
+    }
+    .page-break {
+      page-break-before: always;
+      margin-top: 0 !important;
+    }
+    .no-break {
+      page-break-inside: avoid;
+    }
+    /* Compress spacing for print */
+    .section-label { margin-top: 8px !important; margin-bottom: 5px !important; }
+    .reading-grid { gap: 8px 20px !important; }
+    .article-body { font-size: 9px !important; line-height: 1.35 !important; margin-bottom: 4px !important; }
+    .article-title { font-size: 12px !important; margin-bottom: 2px !important; }
+    .article-source { margin-bottom: 4px !important; }
+    .article-insight { font-size: 9px !important; }
+    .article-cell { padding-top: 5px !important; }
+    .two-col { gap: 14px !important; margin-bottom: 2px !important; }
+    .quote { margin-bottom: 8px !important; padding-bottom: 6px !important; }
+    .schedule-row { margin-bottom: 4px !important; }
+    .week-row { margin-bottom: 4px !important; }
+    .urgent-item { margin-bottom: 4px !important; }
+    .weather { margin-bottom: 2px !important; }
+    .header { padding-bottom: 6px !important; }
+    .header-rule { margin-bottom: 8px !important; }
+    .footer { margin-top: 8px !important; }
+  }
+
+  /* ── FOOTER ──────────────────────────────────────── */
+  .footer {
+    margin-top: 40px;
+    padding-top: 10px;
+    border-top: 0.5px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    font-size: 8.5px;
+    font-weight: 300;
+    letter-spacing: 1px;
+    color: #999;
+  }
+
+  /* ── DIVIDER ─────────────────────────────────────── */
+  .col-divider {
+    border: none;
+    border-top: 0.5px solid var(--rule);
+    margin: 16px 0;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="page1">
+<div class="page1-content">
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <h1>Daily Brief</h1>
+    <div class="byline">Mark Luciano Ainsworth &nbsp;·&nbsp; Managing Partner, LGV &nbsp;&nbsp;|&nbsp;&nbsp; {{day_name}} &nbsp;·&nbsp; {{date_str}}</div>
+  </div>
+  <div class="header-right">
+    <div class="lgv">L G V</div>
+    <div class="firm">Luciano Global Ventures</div>
+  </div>
+</div>
+<hr class="header-rule">
+
+<!-- QUOTE -->
+<div class="quote">
+  {{operator_quote}}
+</div>
+
+<!-- WEATHER -->
+<div class="section-label">Weather</div>
+{{weather_block}}
+
+<!-- SCHEDULE + THIS WEEK -->
+<div class="two-col">
+
+  <div>
+    <div class="section-label">Today's Schedule</div>
+
+{{schedule_rows}}
+  </div>
+
+  <div>
+    <div class="section-label">This Week</div>
+
+{{week_rows}}
+  </div>
+
+</div>
+
+<!-- FAMILY & HOME -->
+<div class="section-label">Family &amp; Home</div>
+<div class="family-grid">
+  <div></div>
+  <div>
+{{family_home_block}}
+  </div>
+</div>
+
+<!-- URGENT -->
+<div class="section-label">Urgent</div>
+
+{{urgent_items}}
+
+</div><!-- end page1-content -->
+<div class="reading-list-anchor">
+<!-- READING LIST -->
+<div class="section-label">Reading List</div>
+<div class="reading-grid">
+
+{{reading_articles}}
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <span>LGV Daily Brief &nbsp;·&nbsp; Luciano Global Ventures Inc. &nbsp;·&nbsp; Confidential</span>
+  <span>{{footer_date}}</span>
+</div>
+</div><!-- end reading-list-anchor -->
+</div><!-- end page1 -->
+
+
+<!-- PAGE BREAK -->
+<div class="page-break" style="margin-top: 60px;">
+
+  <!-- MEETING NOTES HEADER -->
+  <div style="border-top: 2px solid #1E1E1C; padding-bottom: 6px; display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
+    <div style="font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase;">Meeting Notes</div>
+    <div style="font-family: 'Jost', sans-serif; font-size: 10px; font-weight: 300;">{{date_str}}</div>
+  </div>
+  <div style="border-top: 0.5px solid #1E1E1C; margin-bottom: 18px;"></div>
+
+  {{meeting_blocks}}
+
+  <!-- END OF DAY DIVIDER -->
+  <div style="border-top: 2px solid #1E1E1C; margin-bottom: 3px;"></div>
+  <div style="border-top: 0.5px solid #1E1E1C; margin-bottom: 14px;"></div>
+
+  <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+    <div style="font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase;">End of Day</div>
+    <div style="font-family: 'Jost', sans-serif; font-size: 8px; font-weight: 300; letter-spacing: 1px; color: #888;">complete before sleep</div>
+  </div>
+  <div style="border-top: 0.5px solid #1E1E1C; margin-bottom: 18px;"></div>
+
+  <!-- TWO COLUMN END OF DAY -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 24px;">
+
+    <div>
+      <div style="font-family: 'Jost', sans-serif; font-size: 8px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px;">3 Things That Made Today Great</div>
+      <div style="display: flex; gap: 10px; align-items: baseline; margin-bottom: 20px;">
+        <span style="font-family: 'Jost', sans-serif; font-size: 10px;">1.</span>
+        <div style="flex: 1; border-bottom: 0.5px solid #1E1E1C;"></div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: baseline; margin-bottom: 20px;">
+        <span style="font-family: 'Jost', sans-serif; font-size: 10px;">2.</span>
+        <div style="flex: 1; border-bottom: 0.5px solid #1E1E1C;"></div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: baseline; margin-bottom: 20px;">
+        <span style="font-family: 'Jost', sans-serif; font-size: 10px;">3.</span>
+        <div style="flex: 1; border-bottom: 0.5px solid #1E1E1C;"></div>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-family: 'Jost', sans-serif; font-size: 8px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px;">3 Things That Would Make Tomorrow Great</div>
+      <div style="display: flex; gap: 10px; align-items: baseline; margin-bottom: 20px;">
+        <span style="font-family: 'Jost', sans-serif; font-size: 10px;">1.</span>
+        <div style="flex: 1; border-bottom: 0.5px solid #1E1E1C;"></div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: baseline; margin-bottom: 20px;">
+        <span style="font-family: 'Jost', sans-serif; font-size: 10px;">2.</span>
+        <div style="flex: 1; border-bottom: 0.5px solid #1E1E1C;"></div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: baseline; margin-bottom: 20px;">
+        <span style="font-family: 'Jost', sans-serif; font-size: 10px;">3.</span>
+        <div style="flex: 1; border-bottom: 0.5px solid #1E1E1C;"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- TODAY'S NOTE -->
+  <div style="border-top: 0.5px solid #1E1E1C; margin-bottom: 10px;"></div>
+  <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;">
+    <div style="font-family: 'Jost', sans-serif; font-size: 8px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase;">Today's Note</div>
+    <div style="font-family: 'Jost', sans-serif; font-size: 7px; font-weight: 300; letter-spacing: 1px; color: #aaa;">four lines · no prompts · just space</div>
+  </div>
+  <div style="border-top: 0.5px solid #1E1E1C; margin-bottom: 24px;"></div>
+  <div style="border-top: 0.5px solid #1E1E1C; margin-bottom: 24px;"></div>
+  <div style="border-top: 0.5px solid #1E1E1C; margin-bottom: 24px;"></div>
+  <div style="border-top: 0.5px solid #1E1E1C; margin-bottom: 24px;"></div>
+
+  <!-- PAGE 2 FOOTER -->
+  <div style="margin-top: 32px; padding-top: 10px; border-top: 0.5px solid #D0C8BC; display: flex; justify-content: space-between; font-family: 'Jost', sans-serif; font-size: 8.5px; font-weight: 300; letter-spacing: 1px; color: #999;">
+    <span>LGV Daily Brief · Luciano Global Ventures Inc. · Confidential</span>
+    <span>2 of 2</span>
+  </div>
+
+</div>
+
+</body>
+</html>
