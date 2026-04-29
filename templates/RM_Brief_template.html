@@ -9,10 +9,10 @@
 
   :root {
     --ink:    #1E1E1C;
-    --accent: #555555;
+    --accent: #1E1E1C;
     --paper:  #FFFFFF;
     --light:  #EEEEEE;
-    --rule:   #888888;
+    --rule:   #555555;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -25,7 +25,7 @@
     line-height: 1.5;
     max-width: 780px;
     margin: 0 auto;
-    padding: 40px 48px 60px;
+    padding: 5px 6px 10px;
   }
 
   /* Page 1 wrapper — flex column so reading list pins to bottom */
@@ -56,9 +56,9 @@
 
   .header-left h1 {
     font-family: 'Cormorant Garamond', serif;
-    font-size: 38px;
+    font-size: 28px;
     font-weight: 500;
-    letter-spacing: 3px;
+    letter-spacing: 2.5px;
     text-transform: uppercase;
     line-height: 1;
   }
@@ -78,9 +78,9 @@
 
   .header-right .lgv {
     font-family: 'Cormorant Garamond', serif;
-    font-size: 28px;
+    font-size: 22px;
     font-weight: 500;
-    letter-spacing: 6px;
+    letter-spacing: 5px;
     line-height: 1;
   }
 
@@ -97,17 +97,17 @@
   .header-rule {
     border: none;
     border-top: 1px solid var(--rule);
-    margin-bottom: 14px;
+    margin-bottom: 8px;
   }
 
   /* ── QUOTE ───────────────────────────────────────── */
   .quote {
     font-family: 'Cormorant Garamond', serif;
-    font-size: 13px;
+    font-size: 11.5px;
     font-style: italic;
-    color: #2A2A2A;
-    margin-bottom: 18px;
-    padding-bottom: 14px;
+    color: #000;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
     border-bottom: 1px solid var(--rule);
   }
 
@@ -131,6 +131,11 @@
     height: 0.5px;
     background: var(--ink);
   }
+
+  /* Extra breathing room above key sections */
+  .urgent-section-label { margin-top: 40px !important; }
+  .reading-section-label { margin-top: 40px !important; }
+  .family-section-label { margin-top: 40px !important; margin-bottom: 6px !important; }
 
   /* ── WEATHER ─────────────────────────────────────── */
   .weather {
@@ -161,6 +166,7 @@
     grid-template-columns: 1fr 1fr;
     gap: 32px;
     margin-bottom: 4px;
+    min-height: 280px; /* reserve space so Family/Urgent get pushed down even on light days */
   }
 
   /* ── SCHEDULE ────────────────────────────────────── */
@@ -173,31 +179,32 @@
   }
 
   .schedule-time {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 400;
     letter-spacing: 0.5px;
-    color: #333;
+    color: #1E1E1C;
     padding-top: 1px;
   }
 
   .schedule-title {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     line-height: 1.35;
   }
 
   .schedule-tag {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 400;
     letter-spacing: 1px;
-    color: #555;
+    color: #1E1E1C;
     margin-left: 4px;
   }
 
   .schedule-detail {
-    font-size: 10px;
+    font-size: 12.5px;
     font-style: italic;
-    color: #333;
+    font-weight: 500;
+    color: #000;
     font-family: 'Cormorant Garamond', serif;
     margin-top: 1px;
   }
@@ -212,14 +219,14 @@
   }
 
   .week-day {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.5px;
     padding-top: 1px;
   }
 
   .week-detail {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 500;
     line-height: 1.45;
     color: #1E1E1C;
@@ -238,7 +245,7 @@
     letter-spacing: 2px;
     text-transform: uppercase;
     margin-bottom: 8px;
-    color: #333;
+    color: #1E1E1C;
   }
 
   .birthday-row {
@@ -294,11 +301,11 @@
   }
 
   .article-category {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 2px;
     text-transform: uppercase;
-    color: #555;
+    color: #1E1E1C;
     margin-bottom: 6px;
   }
 
@@ -321,15 +328,15 @@
   }
 
   .article-source {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     letter-spacing: 0.5px;
-    color: #555;
+    color: #1E1E1C;
     margin-bottom: 8px;
   }
 
   .article-body {
-    font-size: 11.5px;
+    font-size: 13.5px;
     font-weight: 500;
     line-height: 1.55;
     color: #1E1E1C;
@@ -338,29 +345,29 @@
 
   .article-insight {
     font-family: 'Cormorant Garamond', serif;
-    font-size: 11px;
+    font-size: 13px;
     font-style: italic;
-    color: #333;
+    color: #000;
     line-height: 1.45;
   }
 
   /* ── PRINT / PAGE CONTROL ───────────────────────── */
   @media print {
     body {
-      padding: 16px 32px 20px;
+      padding: 8px 16px 10px;
       font-size: 10px;
     }
     .page1 {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      min-height: 0;
+      display: block;
     }
     .page1-content {
-      flex: 1;
+      flex: none;
     }
     .reading-list-anchor {
-      margin-top: auto;
+      margin-top: 0;
       padding-top: 8px;
+      page-break-inside: avoid;
     }
     .page-break {
       page-break-before: always;
@@ -398,7 +405,7 @@
     font-size: 10.5px;
     font-weight: 400;
     letter-spacing: 1px;
-    color: #555;
+    color: #1E1E1C;
   }
 
   /* ── DIVIDER ─────────────────────────────────────── */
@@ -455,7 +462,7 @@
 </div>
 
 <!-- FAMILY & HOME -->
-<div class="section-label">Family &amp; Home</div>
+<div class="section-label family-section-label">Family &amp; Home</div>
 <div class="family-grid">
   <div></div>
   <div>
@@ -464,14 +471,14 @@
 </div>
 
 <!-- URGENT -->
-<div class="section-label">Urgent</div>
+<div class="section-label urgent-section-label">Urgent</div>
 
 {{urgent_items}}
 
 </div><!-- end page1-content -->
 <div class="reading-list-anchor">
 <!-- READING LIST -->
-<div class="section-label">Reading List</div>
+<div class="section-label reading-section-label">Reading List</div>
 <div class="reading-grid">
 
 {{reading_articles}}
@@ -504,7 +511,7 @@
 
   <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
     <div style="font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">End of Day</div>
-    <div style="font-family: 'Jost', sans-serif; font-size: 10px; font-weight: 400; letter-spacing: 1px; color: #555;">complete before sleep</div>
+    <div style="font-family: 'Jost', sans-serif; font-size: 10px; font-weight: 400; letter-spacing: 1px; color: #1E1E1C;">complete before sleep</div>
   </div>
   <div style="border-top: 1px solid #1E1E1C; margin-bottom: 18px;"></div>
 
@@ -549,7 +556,7 @@
   <div style="border-top: 1px solid #1E1E1C; margin-bottom: 10px;"></div>
   <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;">
     <div style="font-family: 'Jost', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Today's Note</div>
-    <div style="font-family: 'Jost', sans-serif; font-size: 9.5px; font-weight: 400; letter-spacing: 1px; color: #666;">four lines · no prompts · just space</div>
+    <div style="font-family: 'Jost', sans-serif; font-size: 9.5px; font-weight: 400; letter-spacing: 1px; color: #1E1E1C;">four lines · no prompts · just space</div>
   </div>
   <div style="border-top: 1px solid #1E1E1C; margin-bottom: 24px;"></div>
   <div style="border-top: 1px solid #1E1E1C; margin-bottom: 24px;"></div>
@@ -557,7 +564,7 @@
   <div style="border-top: 1px solid #1E1E1C; margin-bottom: 24px;"></div>
 
   <!-- PAGE 2 FOOTER -->
-  <div style="margin-top: 32px; padding-top: 10px; border-top: 1px solid #888888; display: flex; justify-content: space-between; font-family: 'Jost', sans-serif; font-size: 10.5px; font-weight: 400; letter-spacing: 1px; color: #555;">
+  <div style="margin-top: 32px; padding-top: 10px; border-top: 1px solid #888888; display: flex; justify-content: space-between; font-family: 'Jost', sans-serif; font-size: 10.5px; font-weight: 400; letter-spacing: 1px; color: #1E1E1C;">
     <span>LGV Daily Brief · Luciano Global Ventures Inc. · Confidential</span>
     <span>2 of 2</span>
   </div>
